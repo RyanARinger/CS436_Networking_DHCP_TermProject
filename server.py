@@ -9,43 +9,39 @@ from datetime import datetime, timedelta
 # 60secfromnow = timestamp + timedelta(seconds=60)
 
 #ips
-class IpInformation:
-    def __init__(self, address, client, reserved, expiration):
-        self.address = address #ip address
-        self.client = client #client MAC (or IP; TBD)
-        self.reserved = reserved #boolean
-        self.expiration = expiration #expiration ISO
+
+    
 
 #records
 class Record:
-    def __init__(self, recordNumber, mAC, iP, timestamp, acked, active):
+    def __init__(self, recordNumber, mAC, iP, timestamp, acked):
         self.recordNumber = recordNumber
         self.macAddress = mAC
         self.ipAddress = iP
         self.timestamp = timestamp
         self.acknowledged = acked
-        self.active = active
+    def __str__(self):
+        return "[Record NO. " + str(self.recordNumber) + "], IP Address: " + str(self.ipAddress) + ", MAC Address: " + str(self.macAddress) + ", Acked: " + str(self.acknowledged) + ", Expiration: " + str(self.timestamp) + "\n"
 
 # Choose a data structure to store your records
-availableIps = list()
-records = list()
-globalRecordCounter = 0
+records = []
+
 
 # List containing all available IP addresses as strings
 ip_addresses = [ip.exploded for ip in IPv4Interface("192.168.45.0/28").network.hosts()]
 
+recordCount = 0
 for ip in ip_addresses:
     #initially, and whenever an ip is not in use there will be no connected client
     #or expiration timestamp
-    availableIps.append(IpInformation(ip, "", False, ""))
+    records.append(Record(recordCount, "", ip, "", False))
+    recordCount = recordCount + 1
 
 
 # Parse the client messages
 def parse_message(message):
     decodedMessage = message.decode()
-
-    print(decodedMessage)
-
+    print("Server recieved -> " + decodedMessage)
     parsedMessage = decodedMessage.split(" ")
     return parsedMessage
 
@@ -59,62 +55,67 @@ def dhcp_operation(parsed_message):
     elif parsed_message[0] == "DISCOVER":
         #check for next available IP
         #send OFFER
-        print("Found DISCOVER Message")
-        message = offer_Ip(parsed_message[1])
-        print("1" + message)
-        pass
+        return offer_Ip(parsed_message[1])
     elif parsed_message[0] == "REQUEST":
         #send ACK
         #update ip information object
         #False -> True
+        return acknowledge_Ip(parsed_message[1])
         pass
     elif parsed_message[0] == "RELEASE":
         # search in list for matching recieved IP or mac record
         # set reserved to False
         # remove expiration timestamp
+        
+        return "got release"
         pass
     elif parsed_message[0] == "RENEW":
         # search in list for matching recieved IP or mac record
         # update record
         # up ip information w/ new timestamp
             # update reserved boolean just in case False -> True
+        return "got renew"
         pass
     else:
+        print("Invalid Request Recieved: " + parsed_message[0])
         raise Exception("Invalid Request Recieved")
 
 
-def update_IPInformation(ipAddress, macAddress, reserved, timestamp):
-    for ip in availableIps:
-        if ip.address == ipAddress:
-            print("here in info")
-            ip = IpInformation(ipAddress, macAddress, reserved, timestamp)
-            print("ipInfo: " + ip)
-            break
-
-def update_record(recordNumber, mAC, iP, timestamp, acked, active):
+def update_record(ipAddress, macAddress, timestamp, acked):
     for record in records:
-        if record.recordNumber == recordNumber:
-            print("here in record")
-            record.macAddress = mAC
-            record.ipAddress = ip
+        if record.ipAddress == ipAddress:
+            record.macAddress = macAddress
+            record.ipAddress = ipAddress
             record.timestamp = timestamp
             record.acked = acked
-            record.active = active
-            break
+            return
 
 def offer_Ip(macAddress):
-    for ip in availableIps:
-        if ip.reserved == False:
-            print("here in offer")
-            print("offered IP: " + ip.address)
-            # currentTime = datetime.datetime.now().isoformat()
-            # expirationTime = currentTime + timedelta(0, 60, 0, 0, 0, 0, 0, 0)
-            update_IPInformation(ip.address, macAddress, True, None)
-            records.append(Record(globalRecordCounter, macAddress, ip.address, None, False, False))
-            globalRecordCounter = globalRecordCounter + 1
-            return "OFFER " + macAddress + ip.address + datetime.datetime.now().isoformat()
-    #return nothing found
+    for ip in records:
+        if ip.macAddress == macAddress:
+            currentTime = datetime.now().isoformat()
+            expirationTime = currentTime + str(timedelta(0, 60, 0, 0, 0, 0, 0))
+            update_record(ip.ipAddress, macAddress, expirationTime, False)
+            responseMessage = "OFFER " + macAddress + " " + ip.ipAddress + " " + expirationTime
+            return responseMessage
+    for ip in records:
+        if ip.macAddress == "" or datetime.fromisoformat(ip.timestamp) < datetime().now():
+            currentTime = datetime.now().isoformat()
+            expirationTime = currentTime + str(timedelta(0, 60, 0, 0, 0, 0, 0))
+            update_record(ip.ipAddress, macAddress, expirationTime, False)
+            responseMessage = "OFFER " + macAddress + " " + ip.ipAddress + " " + expirationTime
+            return responseMessage
+    return None
         
+def acknowledge_Ip(macAddress):
+    for ip in records:
+        if ip.macAddress == macAddress and ip.timestamp < datetime.now().isoformat():
+            currentTime = datetime.now().isoformat()
+            expirationTime = currentTime + str(timedelta(0, 60, 0, 0, 0, 0, 0))
+            update_record(ip.ipAddress, macAddress, expirationTime, True)
+            responseMessage = "ACKNOWLEDGE " + macAddress + " " + ip.ipAddress + " " + expirationTime
+            return responseMessage
+
 # Start a UDP server
 server = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 # Avoid TIME_WAIT socket lock [DO NOT REMOVE]
@@ -122,20 +123,26 @@ server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 server.bind(("", 9000))
 print("DHCP Server running...")
 
+# for record in records:
+#     print(record)
+
 try:
     while True:
         message, clientAddress = server.recvfrom(4096)
-        print(message)
         parsed_message = parse_message(message)
-        print(parsed_message)
         response = dhcp_operation(parsed_message)
-        print(response)
+        print("Server sending -> " + response)
         server.sendto(response.encode(), clientAddress)
+        
 except OSError:
+    print("OSERROR")
     pass
 except KeyboardInterrupt:
+    print("KEYBOARDINTERRUPT")
     pass
-except Exception:
+except Exception as e:
+    print(e)
+    print(traceback.format_exc())
     pass
 
 server.close()
