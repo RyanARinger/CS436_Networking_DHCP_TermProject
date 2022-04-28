@@ -1,2 +1,2 @@
 ﻿CS436 Term Project, Base DHCP implementation
-Ryan Ringer, Ricardo Huget
+\n Ryan Ringer, Ricardo Huget
