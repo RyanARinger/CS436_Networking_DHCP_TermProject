@@ -103,7 +103,6 @@ def update_record(ipAddress, macAddress, timestamp, acked):
             return
 
 def offer_Ip(macAddress):
-    print("macAddress: " + str(macAddress))
     for ip in records:  
         if ip.macAddress == macAddress:
             expirationTime = datetime.now() + timedelta(0, 60, 0, 0, 0, 0, 0)
